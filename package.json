@@ -1,0 +1,95 @@
+{
+  "name": "claw-setup",
+  "version": "1.0.0",
+  "description": "OpenClaw Installation Wizard",
+  "main": "dist/main.js",
+  "homepage": "./",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "dev": "concurrently \"npm run react\" \"npm run electron-dev\"",
+    "react": "react-scripts start",
+    "build:react": "react-scripts build",
+    "electron": "electron .",
+    "electron-dev": "tsc -p tsconfig.electron.json && wait-on http://localhost:3000 && electron .",
+    "build": "npm run build:react && npm run build:electron",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "pack": "electron-builder --win",
+    "dist": "npm run build && electron-builder --publish=never"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "electron-is-dev": "^2.0.0",
+    "fs-extra": "^11.2.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
+    "zustand": "^4.4.0"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^6.2.1",
+    "@electron-forge/maker-squirrel": "^6.2.1",
+    "@electron-forge/maker-zip": "^6.2.1",
+    "@types/electron": "^1.6.12",
+    "@types/fs-extra": "^11.0.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "concurrently": "^8.2.0",
+    "electron": "^25.0.0",
+    "electron-builder": "^24.6.0",
+    "typescript": "^5.0.0",
+    "wait-on": "^7.0.0"
+  },
+  "build": {
+    "appId": "com.openclaw.setup",
+    "productName": "Claw Setup",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "build/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "extraMetadata": {
+      "main": "dist/main.js"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "artifactName": "Claw-Setup-${version}.${ext}"
+    }
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["electron", "core-js", "core-js-pure", "electron-winstaller"]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}

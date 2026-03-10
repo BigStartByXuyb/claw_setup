@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "target": "es2020",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "allowImportingTsExtensions": false,
+    "lib": ["es2020"],
+    "jsx": "react-jsx"
+  },
+  "include": ["src/main.ts", "src/preload.ts"],
+  "exclude": ["node_modules"]
+}
