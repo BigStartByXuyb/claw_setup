@@ -282,3 +282,153 @@ When testing changes that don't appear:
 
 **Issue**: TypeScript errors at runtime
 **Solution**: Run `npx tsc --noEmit` before testing to catch type errors early
+
+## Advanced Claude Code Features
+
+### Custom Skills
+
+Create reusable prompts as markdown files that run with `/command`:
+
+```bash
+# Create a skill for type checking
+mkdir -p .claude/skills/typecheck
+cat > .claude/skills/typecheck/SKILL.md << 'EOF'
+# TypeCheck Skill
+
+Run TypeScript type checking:
+1. Run `npx tsc --noEmit`
+2. Fix any type errors
+3. Verify imports are correct
+EOF
+
+# Use it with: /typecheck
+```
+
+**Why useful**: You have repetitive workflows like config fixes, plugin management, and build/test cycles. Create `/build`, `/typecheck`, `/configfix` skills to save time.
+
+### Hooks
+
+Auto-run shell commands at lifecycle events:
+
+```json
+// Add to .claude/settings.json
+{
+  "hooks": {
+    "afterEdit": "npx prettier --write {file} && npx tsc --noEmit"
+  }
+}
+```
+
+**Why useful**: With 160+ TypeScript files, auto-format and type-check on every edit catches errors early.
+
+### Task Agents
+
+Use agents for codebase exploration:
+
+```
+Ask: "Use an agent to explore the OpenClaw plugin system architecture
+and document how plugins are loaded and configured"
+```
+
+**Why useful**: Agents can explore unfamiliar code while you focus on implementation. They gather context without cluttering your main conversation.
+
+### MCP Servers
+
+Connect Claude to external tools, databases, and APIs:
+
+```bash
+claude mcp add github -- npx -y @modelcontextprotocol/server-github
+```
+
+**Why useful**: Integrate GitHub for issue lookup, or databases for query help.
+
+### Headless Mode
+
+Run Claude non-interactively from scripts and CI/CD:
+
+```bash
+claude -p "fix all TypeScript type errors in src/" \
+  --allowedTools "Edit,Read,Bash" \
+  --output results.json
+```
+
+**Why useful**: Automate repetitive fixes in CI/CD pipelines for your installer and React Native apps.
+
+## Recommended Usage Patterns
+
+### Pattern 1: Root Cause Before Implementation
+
+**Before fixing any issue, identify and verify the root cause:**
+
+```
+Ask Claude: "Before fixing this issue, state your hypothesis for the root cause
+and verify it by checking the relevant code/config. Only implement a fix after
+confirming the root cause."
+```
+
+**Why**: Prevents surface-level fixes that don't solve the actual problem. Multiple sessions had issues where wrong config paths or browser caching were the real problems, not the code logic.
+
+### Pattern 2: Verify Config Paths First
+
+**When debugging config issues:**
+
+```
+Ask Claude: "Before fixing this config issue, show me:
+1) Which config file path is being read
+2) Which path is being written to
+3) Verify both paths exist and are the same file
+Then make the fix."
+```
+
+**Why**: Saves hours of debugging why config changes don't persist. Multiple sessions failed because code read from one path but wrote to another.
+
+### Pattern 3: Type-Check Before Testing
+
+**After any TypeScript changes:**
+
+```
+Ask Claude: "Before we test this, run `npx tsc --noEmit` to check for any
+TypeScript errors. Fix all type issues before proceeding to runtime testing."
+```
+
+**Why**: Type errors caught at compile time save hours of runtime debugging. Especially important after multi-file changes.
+
+### Pattern 4: Test Before Declaring Done
+
+**After implementing features:**
+
+```
+Ask Claude: "After making these changes, run the application and verify:
+1) The feature works as expected
+2) No runtime errors occur
+3) Config changes persist correctly
+Show me the test results."
+```
+
+**Why**: Many issues only surface at runtime. Testing catches problems before users discover them.
+
+### Pattern 5: Minimal Implementation First
+
+**When starting a task:**
+
+```
+Ask Claude: "Implement this with the absolute minimum code needed.
+No extra abstractions, no additional features, just the core functionality
+that solves the immediate problem."
+```
+
+**Why**: Simpler code has fewer bugs and is easier to verify. Add complexity only when actually needed.
+
+### Pattern 6: Use Agents for Exploration
+
+**When working with unfamiliar code:**
+
+```
+Ask Claude: "Use an agent to explore [specific system/module] and create
+a detailed document explaining:
+1) Architecture and key components
+2) How data flows through the system
+3) Important patterns and conventions to follow"
+```
+
+**Why**: Agents can explore and document systems while you focus on implementation, without cluttering your main conversation.
