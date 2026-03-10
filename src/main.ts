@@ -386,12 +386,18 @@ ipcMain.handle('install-tool', async (event, tool: string) => {
 
           console.log('下载完成，开始安装...');
 
-          // 静默安装 Node.js
+          // 安装到测试专用路径，避免覆盖用户现有的 Node.js
+          const testInstallDir = 'C:\\openclaw-test\\nodejs';
+          await fs.ensureDir(testInstallDir);
+
+          // 静默安装 Node.js 到自定义路径
           // /quiet: 静默安装，不显示UI
           // /norestart: 安装后不重启
           // ADDLOCAL=ALL: 安装所有功能
-          const installCommand = `msiexec /i "${installerPath}" /quiet /norestart ADDLOCAL=ALL`;
+          // INSTALLDIR: 自定义安装路径
+          const installCommand = `msiexec /i "${installerPath}" /quiet /norestart ADDLOCAL=ALL INSTALLDIR="${testInstallDir}"`;
 
+          console.log(`安装 Node.js 到: ${testInstallDir}`);
           await execAsync(installCommand, { timeout: 300000 }); // 5分钟超时
 
           console.log('Node.js 安装完成');
