@@ -181,7 +181,7 @@ ipcMain.handle('check-system-info', async () => {
 
 // 第二步：检查依赖和环境变量
 ipcMain.handle('check-dependencies', async () => {
-  const required: { [key: string]: { installed: boolean; version?: string; path?: string } } = {};
+  const required: { [key: string]: { installed: boolean; version?: string; path?: string; description?: string } } = {};
   const optional: { [key: string]: { installed: boolean; version?: string; path?: string; description?: string } } = {};
   const envVars: { [key: string]: { set: boolean; value?: string } } = {};
 
@@ -198,11 +198,45 @@ ipcMain.handle('check-dependencies', async () => {
   for (const tool of requiredTools) {
     try {
       const { stdout } = await execAsync(`${tool} --version`);
-      required[tool] = {
-        installed: true,
-        version: stdout.trim(),
-        path: await getToolPath(tool),
-      };
+      const version = stdout.trim();
+
+      // 对于 Node.js，检查版本是否满足 >=22.12.0
+      if (tool === 'node') {
+        const versionMatch = version.match(/v?(\d+)\.(\d+)\.(\d+)/);
+        if (versionMatch) {
+          const [, major, minor, patch] = versionMatch.map(Number);
+          const currentVersion = major * 10000 + minor * 100 + patch;
+          const requiredVersion = 22 * 10000 + 12 * 100 + 0; // 22.12.0
+
+          if (currentVersion >= requiredVersion) {
+            required[tool] = {
+              installed: true,
+              version,
+              path: await getToolPath(tool),
+            };
+          } else {
+            // 版本过低，标记为未满足要求
+            required[tool] = {
+              installed: false,
+              version,
+              path: await getToolPath(tool),
+              description: `当前版本 ${version} 低于要求的 22.12.0，请升级`,
+            };
+          }
+        } else {
+          // 无法解析版本
+          required[tool] = {
+            installed: false,
+            version,
+          };
+        }
+      } else {
+        required[tool] = {
+          installed: true,
+          version,
+          path: await getToolPath(tool),
+        };
+      }
     } catch {
       required[tool] = { installed: false };
     }

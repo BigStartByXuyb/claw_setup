@@ -147,27 +147,42 @@ const StepTwo: React.FC<Props> = ({ onReadyChange }) => {
                   </div>
                 </>
               ) : (
-                <div className="dep-actions">
-                  {(tool === 'pnpm' || tool === 'node') ? (
-                    <button
-                      className="btn btn-primary btn-sm"
-                      onClick={() => handleAutoInstall(tool)}
-                      disabled={installing.has(tool)}
-                    >
-                      {installing.has(tool) ? '安装中...' : '自动安装'}
-                    </button>
-                  ) : (
-                    <button
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => handleManualInstall(tool)}
-                    >
-                      打开官网下载
-                    </button>
+                <>
+                  {status.description && (
+                    <div className="dep-detail-row" style={{ marginBottom: 8 }}>
+                      <span className="dep-detail-val" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                        {status.description}
+                      </span>
+                    </div>
                   )}
-                  <button className="btn btn-ghost btn-sm" onClick={checkDependencies}>
-                    检查
-                  </button>
-                </div>
+                  {status.version && (
+                    <div className="dep-detail-row" style={{ marginBottom: 8 }}>
+                      <span className="dep-detail-key">当前版本</span>
+                      <span className="dep-detail-val">{status.version}</span>
+                    </div>
+                  )}
+                  <div className="dep-actions">
+                    {(tool === 'pnpm' || tool === 'node') ? (
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={() => handleAutoInstall(tool)}
+                        disabled={installing.has(tool)}
+                      >
+                        {installing.has(tool) ? '安装中...' : '自动安装'}
+                      </button>
+                    ) : (
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => handleManualInstall(tool)}
+                      >
+                        打开官网下载
+                      </button>
+                    )}
+                    <button className="btn btn-ghost btn-sm" onClick={checkDependencies}>
+                      检查
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           </div>
