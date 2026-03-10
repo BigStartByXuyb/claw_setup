@@ -267,10 +267,29 @@ ipcMain.handle('install-tool', async (event, tool: string) => {
       return { success: false, message: `${tool} 正在安装中，请稍候...`, installing: true };
     }
 
-    // 2. 检查工具是否已安装
+    // 2. 检查工具是否已安装并验证版本
     try {
       const { stdout } = await execAsync(`${tool} --version`);
-      return { success: true, message: `${tool} 已安装 (版本: ${stdout.trim()})`, alreadyInstalled: true, version: stdout.trim() };
+      const version = stdout.trim();
+
+      // 对于 Node.js，检查版本是否满足 >=22.12.0
+      if (tool === 'node') {
+        const versionMatch = version.match(/v?(\d+)\.(\d+)\.(\d+)/);
+        if (versionMatch) {
+          const [, major, minor, patch] = versionMatch.map(Number);
+          const currentVersion = major * 10000 + minor * 100 + patch;
+          const requiredVersion = 22 * 10000 + 12 * 100 + 0; // 22.12.0
+
+          if (currentVersion >= requiredVersion) {
+            return { success: true, message: `${tool} 已安装 (版本: ${version})`, alreadyInstalled: true, version };
+          } else {
+            // 版本过低，继续安装流程
+            console.log(`Node.js 版本 ${version} 低于要求的 22.12.0，需要升级`);
+          }
+        }
+      } else {
+        return { success: true, message: `${tool} 已安装 (版本: ${version})`, alreadyInstalled: true, version };
+      }
     } catch {
       // 工具未安装，继续安装流程
     }
@@ -295,7 +314,74 @@ ipcMain.handle('install-tool', async (event, tool: string) => {
           };
         }
       } else if (tool === 'node') {
-        return { success: false, message: 'Please download Node.js from https://nodejs.org/' };
+        try {
+          // 自动下载并安装 Node.js 22.12.0+
+          const nodeVersion = '22.12.0';
+          const arch = os.arch() === 'x64' ? 'x64' : 'x86';
+          const installerUrl = `https://nodejs.org/dist/v${nodeVersion}/node-v${nodeVersion}-${arch}.msi`;
+          const tempDir = path.join(os.tmpdir(), 'openclaw-installer');
+          const installerPath = path.join(tempDir, `node-v${nodeVersion}-${arch}.msi`);
+
+          await fs.ensureDir(tempDir);
+
+          // 下载安装包
+          console.log(`正在下载 Node.js ${nodeVersion}...`);
+          const https = require('https');
+          const file = require('fs').createWriteStream(installerPath);
+
+          await new Promise<void>((resolve, reject) => {
+            https.get(installerUrl, (response: any) => {
+              if (response.statusCode === 302 || response.statusCode === 301) {
+                // 处理重定向
+                https.get(response.headers.location, (redirectResponse: any) => {
+                  redirectResponse.pipe(file);
+                  file.on('finish', () => {
+                    file.close();
+                    resolve();
+                  });
+                }).on('error', reject);
+              } else {
+                response.pipe(file);
+                file.on('finish', () => {
+                  file.close();
+                  resolve();
+                });
+              }
+            }).on('error', reject);
+          });
+
+          console.log('下载完成，开始安装...');
+
+          // 静默安装 Node.js
+          // /quiet: 静默安装，不显示UI
+          // /norestart: 安装后不重启
+          // ADDLOCAL=ALL: 安装所有功能
+          const installCommand = `msiexec /i "${installerPath}" /quiet /norestart ADDLOCAL=ALL`;
+
+          await execAsync(installCommand, { timeout: 300000 }); // 5分钟超时
+
+          console.log('Node.js 安装完成');
+
+          // 清理临时文件
+          try {
+            await fs.remove(installerPath);
+          } catch (cleanupError) {
+            console.warn('清理临时文件失败:', cleanupError);
+          }
+
+          return {
+            success: true,
+            message: `Node.js ${nodeVersion} 安装成功！\n\n重要提示：\n1. 请关闭并重新打开此安装程序\n2. 或者重启电脑以使环境变量生效\n3. 然后重新运行安装向导`,
+            newlyInstalled: true,
+            requiresRestart: true
+          };
+        } catch (error: any) {
+          return {
+            success: false,
+            message: `Node.js 自动安装失败。\n\n请手动下载安装：\n1. 访问 https://nodejs.org/\n2. 下载 Node.js 22.12.0 或更高版本\n3. 安装后重启此程序\n\n错误详情：${error.message}`,
+            error: error.message
+          };
+        }
       } else if (tool === 'git') {
         return { success: false, message: 'Please download Git from https://git-scm.com/' };
       }
@@ -317,6 +403,16 @@ ipcMain.handle('install-openclaw', async (event, options: {
 }) => {
   try {
     if (options.method === 'prebuilt') {
+      // 配置 git 使用 HTTPS 协议而不是 SSH 协议，避免 SSH 密钥问题
+      // 这样可以解决某些依赖包使用 SSH URL 导致的安装失败
+      try {
+        await execAsync('git config --global url."https://github.com/".insteadOf ssh://git@github.com/');
+        console.log('已配置 git 使用 HTTPS 协议');
+      } catch (gitConfigError) {
+        console.warn('配置 git HTTPS 协议失败:', gitConfigError);
+        // 继续安装，即使配置失败
+      }
+
       const { stdout } = await execAsync('npm install -g openclaw@latest');
     } else {
       const installPath = options.installDir;
