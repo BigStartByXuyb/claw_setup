@@ -25,6 +25,7 @@ const StepTwo: React.FC<Props> = ({ onReadyChange }) => {
   const [optional,     setOptional]     = useState<{ [key: string]: DependencyStatus }>({});
   const [envVars,      setEnvVars]      = useState<{ [key: string]: any }>({});
   const [installing,   setInstalling]   = useState<Set<string>>(new Set());
+  const [installError, setInstallError] = useState<{ tool: string; message: string } | null>(null);
 
   useEffect(() => {
     checkDependencies();
@@ -56,6 +57,7 @@ const StepTwo: React.FC<Props> = ({ onReadyChange }) => {
     if (installing.has(tool)) return;
 
     setInstalling(prev => new Set(prev).add(tool));
+    setInstallError(null); // 清除之前的错误
 
     try {
       const result = await ipc.invoke('install-tool', tool);
@@ -69,8 +71,15 @@ const StepTwo: React.FC<Props> = ({ onReadyChange }) => {
         alert(`${tool} 安装成功！`);
         await checkDependencies();
       } else if (!result.success) {
-        alert(`无法自动安装 ${tool}: ${result.message || result.error}`);
+        // 存储错误信息而不是使用 alert
+        const errorMessage = result.message || result.error || '未知错误';
+        const fullError = `工具: ${tool}\n错误: ${errorMessage}\n输出: ${result.output || '无'}`;
+        setInstallError({ tool, message: fullError });
       }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      const fullError = `工具: ${tool}\n错误: ${errorMessage}`;
+      setInstallError({ tool, message: fullError });
     } finally {
       setInstalling(prev => {
         const next = new Set(prev);
@@ -88,6 +97,17 @@ const StepTwo: React.FC<Props> = ({ onReadyChange }) => {
       pnpm: 'https://pnpm.io/',
     };
     if (urls[tool]) ipc.invoke('open-external', urls[tool]);
+  };
+
+  const handleCopyError = () => {
+    if (installError) {
+      navigator.clipboard.writeText(installError.message).then(() => {
+        alert('错误信息已复制到剪贴板');
+      }).catch((err) => {
+        console.error('复制失败:', err);
+        alert('复制失败，请手动复制');
+      });
+    }
   };
 
   if (checking) {
@@ -128,7 +148,7 @@ const StepTwo: React.FC<Props> = ({ onReadyChange }) => {
                 </>
               ) : (
                 <div className="dep-actions">
-                  {tool === 'pnpm' ? (
+                  {(tool === 'pnpm' || tool === 'node') ? (
                     <button
                       className="btn btn-primary btn-sm"
                       onClick={() => handleAutoInstall(tool)}
@@ -220,6 +240,36 @@ const StepTwo: React.FC<Props> = ({ onReadyChange }) => {
         <div className="alert alert-success" style={{ marginTop: 16 }}>
           <span>✓</span>
           <span>所有必需依赖已满足！可选依赖：{optionalInstalledCount}/{optionalTotalCount} 已安装</span>
+        </div>
+      )}
+
+      {/* 错误详情 */}
+      {installError && (
+        <div className="alert alert-error" style={{ marginTop: 16 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+            <div style={{ fontWeight: 600 }}>安装失败</div>
+            <pre style={{
+              margin: 0,
+              padding: 8,
+              background: 'rgba(0,0,0,0.1)',
+              borderRadius: 4,
+              fontSize: 11,
+              overflow: 'auto',
+              maxHeight: 200,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word'
+            }}>
+              {installError.message}
+            </pre>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-primary btn-sm" onClick={handleCopyError}>
+                复制错误详情
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setInstallError(null)}>
+                关闭
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

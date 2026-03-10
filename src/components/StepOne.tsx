@@ -36,6 +36,18 @@ const StepOne: React.FC<Props> = ({ onReadyChange }) => {
     }
   };
 
+  const handleCopyError = () => {
+    if (error) {
+      const fullError = `系统检查失败\n\n错误信息:\n${error}`;
+      navigator.clipboard.writeText(fullError).then(() => {
+        alert('错误信息已复制到剪贴板');
+      }).catch((err) => {
+        console.error('复制失败:', err);
+        alert('复制失败，请手动复制');
+      });
+    }
+  };
+
   if (checking) {
     return (
       <div className="loading-wrap">
@@ -49,8 +61,30 @@ const StepOne: React.FC<Props> = ({ onReadyChange }) => {
     <div className="step-panel">
       {error && (
         <div className="alert alert-error">
-          <span>✗</span>
-          <span>{error}</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+            <div style={{ fontWeight: 600 }}>系统检查失败</div>
+            <pre style={{
+              margin: 0,
+              padding: 8,
+              background: 'rgba(0,0,0,0.1)',
+              borderRadius: 4,
+              fontSize: 11,
+              overflow: 'auto',
+              maxHeight: 200,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word'
+            }}>
+              {error}
+            </pre>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-primary btn-sm" onClick={handleCopyError}>
+                复制错误详情
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setError(null)}>
+                关闭
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
