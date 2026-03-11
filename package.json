@@ -22,12 +22,14 @@
     "dist": "npm run build && electron-builder --publish=never"
   },
   "dependencies": {
+    "adm-zip": "^0.5.16",
     "axios": "^1.6.0",
     "electron-is-dev": "^2.0.0",
     "fs-extra": "^11.2.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-scripts": "5.0.1",
+    "sudo-prompt": "^9.2.1",
     "zustand": "^4.4.0"
   },
   "devDependencies": {
@@ -65,11 +67,15 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
@@ -82,7 +88,12 @@
     }
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["electron", "core-js", "core-js-pure", "electron-winstaller"]
+    "onlyBuiltDependencies": [
+      "electron",
+      "core-js",
+      "core-js-pure",
+      "electron-winstaller"
+    ]
   },
   "browserslist": {
     "production": [

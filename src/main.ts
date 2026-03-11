@@ -185,6 +185,80 @@ ipcMain.handle('check-dependencies', async () => {
   const optional: { [key: string]: { installed: boolean; version?: string; path?: string; description?: string } } = {};
   const envVars: { [key: string]: { set: boolean; value?: string } } = {};
 
+  // 测试模式：检测测试目录下的工具
+  const isTestMode = process.env.OPENCLAW_TEST_MODE === '1';
+  const testDir = 'C:\\openclaw-test';
+
+  if (isTestMode) {
+    console.log('⚠️ 测试模式：检测测试目录', testDir);
+
+    // 检测测试目录下的必需工具
+    const testTools = [
+      { name: 'node', path: path.join(testDir, 'nodejs', 'node.exe') },
+      { name: 'npm', path: path.join(testDir, 'nodejs', 'npm.cmd') },
+      { name: 'git', path: path.join(testDir, 'git', 'bin', 'git.exe') },
+      { name: 'pnpm', paths: [
+        path.join(testDir, 'pnpm', 'pnpm.cmd'),
+        path.join(testDir, 'pnpm', 'bin', 'pnpm.cmd'),
+        path.join(testDir, 'pnpm', 'pnpm'),
+      ]},
+    ];
+
+    for (const tool of testTools) {
+      try {
+        const pathsToCheck = (tool as any).paths || [tool.path];
+        let found = false;
+
+        for (const p of pathsToCheck) {
+          const exists = await fs.pathExists(p);
+          if (exists) {
+            try {
+              const { stdout } = await execAsync(`"${p}" --version`);
+              required[tool.name] = { installed: true, version: stdout.trim(), path: p };
+            } catch {
+              required[tool.name] = { installed: true, path: p };
+            }
+            found = true;
+            break;
+          }
+        }
+
+        if (!found) {
+          required[tool.name] = { installed: false };
+        }
+      } catch {
+        required[tool.name] = { installed: false };
+      }
+    }
+
+    // 可选依赖标记为未安装（测试模式不检测）
+    const optionalTools = [
+      { name: 'python', description: '用于 Python 技能和脚本执行' },
+      { name: 'python3', description: '用于 Python 技能和脚本执行' },
+      { name: 'docker', description: '用于容器化部署和沙箱环境' },
+      { name: 'docker-compose', description: '用于多容器应用编排' },
+      { name: 'ffmpeg', description: '用于音视频处理功能' },
+      { name: 'magick', description: '用于图像处理功能 (ImageMagick)' },
+    ];
+    for (const tool of optionalTools) {
+      optional[tool.name] = {
+        installed: false,
+        description: tool.description,
+      };
+    }
+
+    // 环境变量正常检查
+    const requiredEnvVars = ['PATH', 'USERPROFILE', 'TEMP'];
+    for (const envVar of requiredEnvVars) {
+      envVars[envVar] = {
+        set: !!process.env[envVar],
+        value: process.env[envVar],
+      };
+    }
+
+    return { required, optional, envVars };
+  }
+
   const requiredEnvVars = ['PATH', 'USERPROFILE', 'TEMP'];
   for (const envVar of requiredEnvVars) {
     envVars[envVar] = {
@@ -238,7 +312,60 @@ ipcMain.handle('check-dependencies', async () => {
         };
       }
     } catch {
-      required[tool] = { installed: false };
+      // PATH 中检测失败，尝试检查已知的安装目录
+      if (tool === 'node' || tool === 'npm') {
+        const possiblePaths = [
+          path.join(process.env.USERPROFILE || os.homedir(), 'AppData', 'Local', 'openclaw', 'nodejs', tool === 'node' ? 'node.exe' : 'npm.cmd'),
+          path.join('C:\\Program Files\\openclaw\\nodejs', tool === 'node' ? 'node.exe' : 'npm.cmd'),
+        ];
+
+        let found = false;
+        for (const toolPath of possiblePaths) {
+          if (await fs.pathExists(toolPath)) {
+            try {
+              const { stdout } = await execAsync(`"${toolPath}" --version`);
+              const version = stdout.trim();
+
+              if (tool === 'node') {
+                const versionMatch = version.match(/v?(\d+)\.(\d+)\.(\d+)/);
+                if (versionMatch) {
+                  const [, major, minor, patch] = versionMatch.map(Number);
+                  const currentVersion = major * 10000 + minor * 100 + patch;
+                  const requiredVersion = 22 * 10000 + 12 * 100 + 0;
+
+                  if (currentVersion >= requiredVersion) {
+                    required[tool] = {
+                      installed: true,
+                      version,
+                      path: toolPath,
+                      description: '已安装但未在 PATH 中，请重启终端或电脑',
+                    };
+                    found = true;
+                    break;
+                  }
+                }
+              } else {
+                required[tool] = {
+                  installed: true,
+                  version,
+                  path: toolPath,
+                  description: '已安装但未在 PATH 中，请重启终端或电脑',
+                };
+                found = true;
+                break;
+              }
+            } catch {
+              // 继续检查下一个路径
+            }
+          }
+        }
+
+        if (!found) {
+          required[tool] = { installed: false };
+        }
+      } else {
+        required[tool] = { installed: false };
+      }
     }
   }
 
@@ -301,31 +428,36 @@ ipcMain.handle('install-tool', async (event, tool: string) => {
       return { success: false, message: `${tool} 正在安装中，请稍候...`, installing: true };
     }
 
-    // 2. 检查工具是否已安装并验证版本
-    try {
-      const { stdout } = await execAsync(`${tool} --version`);
-      const version = stdout.trim();
+    // 2. 检查工具是否已安装并验证版本（测试模式下跳过）
+    const isTestMode = process.env.OPENCLAW_TEST_MODE === '1';
+    if (!isTestMode) {
+      try {
+        const { stdout } = await execAsync(`${tool} --version`);
+        const version = stdout.trim();
 
-      // 对于 Node.js，检查版本是否满足 >=22.12.0
-      if (tool === 'node') {
-        const versionMatch = version.match(/v?(\d+)\.(\d+)\.(\d+)/);
-        if (versionMatch) {
-          const [, major, minor, patch] = versionMatch.map(Number);
-          const currentVersion = major * 10000 + minor * 100 + patch;
-          const requiredVersion = 22 * 10000 + 12 * 100 + 0; // 22.12.0
+        // 对于 Node.js，检查版本是否满足 >=22.12.0
+        if (tool === 'node') {
+          const versionMatch = version.match(/v?(\d+)\.(\d+)\.(\d+)/);
+          if (versionMatch) {
+            const [, major, minor, patch] = versionMatch.map(Number);
+            const currentVersion = major * 10000 + minor * 100 + patch;
+            const requiredVersion = 22 * 10000 + 12 * 100 + 0; // 22.12.0
 
-          if (currentVersion >= requiredVersion) {
-            return { success: true, message: `${tool} 已安装 (版本: ${version})`, alreadyInstalled: true, version };
-          } else {
-            // 版本过低，继续安装流程
-            console.log(`Node.js 版本 ${version} 低于要求的 22.12.0，需要升级`);
+            if (currentVersion >= requiredVersion) {
+              return { success: true, message: `${tool} 已安装 (版本: ${version})`, alreadyInstalled: true, version };
+            } else {
+              // 版本过低，继续安装流程
+              console.log(`Node.js 版本 ${version} 低于要求的 22.12.0，需要升级`);
+            }
           }
+        } else {
+          return { success: true, message: `${tool} 已安装 (版本: ${version})`, alreadyInstalled: true, version };
         }
-      } else {
-        return { success: true, message: `${tool} 已安装 (版本: ${version})`, alreadyInstalled: true, version };
+      } catch {
+        // 工具未安装，继续安装流程
       }
-    } catch {
-      // 工具未安装，继续安装流程
+    } else {
+      console.log(`⚠️ 测试模式：跳过 ${tool} 已安装检查，强制进入安装流程`);
     }
 
     // 3. 设置安装锁
@@ -334,70 +466,72 @@ ipcMain.handle('install-tool', async (event, tool: string) => {
     try {
       if (tool === 'pnpm') {
         try {
-          // 使用用户当前配置的 npm registry
-          const { stdout } = await execAsync('npm install -g pnpm@latest', {
-            encoding: 'utf8',
-            env: { ...process.env, LANG: 'en_US.UTF-8' }
-          });
-          return { success: true, output: stdout, newlyInstalled: true };
+          if (isTestMode) {
+            const testDir = 'C:\\openclaw-test\\pnpm';
+            await fs.ensureDir(testDir);
+            const { stdout } = await execAsync(`npm install -g --prefix "${testDir}" pnpm@latest`, {
+              encoding: 'utf8',
+              env: { ...process.env, LANG: 'en_US.UTF-8' }
+            });
+            return { success: true, message: `pnpm 已安装到: ${testDir}`, newlyInstalled: true };
+          } else {
+            // 使用 chcp 65001 确保 UTF-8 编码，避免乱码
+            const { stdout } = await execAsync('chcp 65001 >nul && npm install -g pnpm@latest', {
+              encoding: 'utf8',
+              shell: 'cmd.exe',
+              env: { ...process.env, LANG: 'en_US.UTF-8' }
+            });
+            return { success: true, output: stdout, newlyInstalled: true };
+          }
         } catch (error: any) {
+          // 改进错误信息，避免显示乱码
+          const errorMsg = error.message || String(error);
+          const cleanMsg = errorMsg.replace(/[^\x20-\x7E\n]/g, '?'); // 移除非 ASCII 字符
           return {
             success: false,
-            message: `安装失败。请尝试：\n1. 检查 npm 是否正常（运行 npm --version）\n2. 检查网络连接\n3. 如果网络慢，可配置镜像源：\n   npm config set registry https://registry.npmmirror.com\n\n错误详情：${error.message}`,
-            error: error.message
+            message: `安装失败: ${cleanMsg}\n\n提示：请确保 npm 可用且网络连接正常`,
+            error: cleanMsg
           };
         }
       } else if (tool === 'node') {
         try {
-          // 自动下载并安装 Node.js 22.12.0+
           const nodeVersion = '22.12.0';
           const arch = os.arch() === 'x64' ? 'x64' : 'x86';
-          const installerUrl = `https://nodejs.org/dist/v${nodeVersion}/node-v${nodeVersion}-${arch}.msi`;
+          const msiUrl = `https://nodejs.org/dist/v${nodeVersion}/node-v${nodeVersion}-${arch}.msi`;
+
           const tempDir = path.join(os.tmpdir(), 'openclaw-installer');
           const installerPath = path.join(tempDir, `node-v${nodeVersion}-${arch}.msi`);
 
           await fs.ensureDir(tempDir);
 
-          // 下载安装包
           console.log(`正在下载 Node.js ${nodeVersion}...`);
+
+          // 下载MSI安装包
           const https = require('https');
           const file = require('fs').createWriteStream(installerPath);
 
           await new Promise<void>((resolve, reject) => {
-            https.get(installerUrl, (response: any) => {
+            https.get(msiUrl, (response: any) => {
               if (response.statusCode === 302 || response.statusCode === 301) {
-                // 处理重定向
                 https.get(response.headers.location, (redirectResponse: any) => {
                   redirectResponse.pipe(file);
-                  file.on('finish', () => {
-                    file.close();
-                    resolve();
-                  });
+                  file.on('finish', () => { file.close(); resolve(); });
                 }).on('error', reject);
               } else {
                 response.pipe(file);
-                file.on('finish', () => {
-                  file.close();
-                  resolve();
-                });
+                file.on('finish', () => { file.close(); resolve(); });
               }
             }).on('error', reject);
           });
 
           console.log('下载完成，开始安装...');
 
-          // 安装到测试专用路径，避免覆盖用户现有的 Node.js
-          const testInstallDir = 'C:\\openclaw-test\\nodejs';
-          await fs.ensureDir(testInstallDir);
-
-          // 静默安装 Node.js 到自定义路径
-          // /quiet: 静默安装，不显示UI
+          // 静默安装Node.js
+          // /i: 安装
+          // /quiet: 静默模式，不显示UI
           // /norestart: 安装后不重启
-          // ADDLOCAL=ALL: 安装所有功能
-          // INSTALLDIR: 自定义安装路径
-          const installCommand = `msiexec /i "${installerPath}" /quiet /norestart ADDLOCAL=ALL INSTALLDIR="${testInstallDir}"`;
+          const installCommand = `msiexec /i "${installerPath}" /quiet /norestart`;
 
-          console.log(`安装 Node.js 到: ${testInstallDir}`);
           await execAsync(installCommand, { timeout: 300000 }); // 5分钟超时
 
           console.log('Node.js 安装完成');
@@ -446,14 +580,20 @@ ipcMain.handle('install-openclaw', async (event, options: {
       // 配置 git 使用 HTTPS 协议而不是 SSH 协议，避免 SSH 密钥问题
       // 这样可以解决某些依赖包使用 SSH URL 导致的安装失败
       try {
+        // 清理可能存在的错误npm配置
+        await execAsync('npm config delete git').catch(() => {});
+
+        // 配置多种 SSH URL 格式转换为 HTTPS
         await execAsync('git config --global url."https://github.com/".insteadOf ssh://git@github.com/');
+        await execAsync('git config --global url."https://github.com/".insteadOf git@github.com:');
+        await execAsync('git config --global url."https://".insteadOf ssh://');
         console.log('已配置 git 使用 HTTPS 协议');
       } catch (gitConfigError) {
         console.warn('配置 git HTTPS 协议失败:', gitConfigError);
         // 继续安装，即使配置失败
       }
 
-      const { stdout } = await execAsync('npm install -g openclaw@latest');
+      const { stdout } = await execAsync('npm install -g openclaw@latest', { timeout: 600000 }); // 10分钟超时
     } else {
       const installPath = options.installDir;
       await fs.ensureDir(installPath);
@@ -497,7 +637,17 @@ ipcMain.handle('install-openclaw', async (event, options: {
 
     return { success: true, output: 'Installation completed' };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    const errorMsg = (error as Error).message;
+
+    // 检查是否是网络连接问题
+    if (errorMsg.includes('Failed to connect') || errorMsg.includes('ENOTFOUND') || errorMsg.includes('ETIMEDOUT')) {
+      return {
+        success: false,
+        error: `网络连接失败，无法访问 GitHub。\n\n可能的解决方案：\n1. 检查网络连接是否正常\n2. 如果在中国大陆，可能需要配置代理或使用镜像源\n3. 配置 npm 代理：\n   npm config set proxy http://代理地址:端口\n   npm config set https-proxy http://代理地址:端口\n4. 或使用国内镜像源：\n   npm config set registry https://registry.npmmirror.com\n\n原始错误：${errorMsg}`
+      };
+    }
+
+    return { success: false, error: errorMsg };
   }
 });
 
@@ -806,8 +956,31 @@ ipcMain.handle('gateway-start', async (event, options?: { forceKill?: boolean })
       if (config.gateway?.port) {
         port = config.gateway.port;
       }
+
+      // 确保 gateway.mode 已设置（openclaw 要求）
+      if (!config.gateway) {
+        config.gateway = {};
+      }
+      if (!config.gateway.mode) {
+        config.gateway.mode = 'local';
+        config.gateway.port = port;
+        await fs.writeJSON(configPath, config, { spaces: 2 });
+        console.log('已自动设置 gateway.mode=local');
+      }
     } catch (error) {
-      // 配置文件不存在或读取失败，使用默认端口
+      // 配置文件不存在或读取失败，创建默认配置
+      try {
+        await fs.ensureDir(path.dirname(configPath));
+        await fs.writeJSON(configPath, {
+          gateway: {
+            mode: 'local',
+            port: port
+          }
+        }, { spaces: 2 });
+        console.log('已创建默认配置文件');
+      } catch (writeError) {
+        console.warn('无法创建配置文件:', writeError);
+      }
     }
 
     // 检测端口是否被占用（直接使用 findProcessByPort 更可靠）
@@ -853,10 +1026,31 @@ ipcMain.handle('gateway-start', async (event, options?: { forceKill?: boolean })
       }
     }
 
+    // 检测PowerShell执行策略，决定使用哪个shell
+    let useCmd = false;
+    try {
+      const { stdout } = await execAsync('powershell -Command "Get-ExecutionPolicy"', { timeout: 3000 });
+      const policy = stdout.trim();
+      if (policy === 'Restricted' || policy === 'AllSigned') {
+        useCmd = true;
+        console.log(`检测到PowerShell执行策略为 ${policy}，使用cmd.exe启动网关`);
+      }
+    } catch (error) {
+      // 检测失败，默认使用cmd.exe以确保兼容性
+      useCmd = true;
+      console.log('无法检测PowerShell执行策略，使用cmd.exe启动网关');
+    }
+
     // 启动网关
-    gatewayProcess = spawn('openclaw', ['gateway', '--port', String(port), '--verbose'], {
-      shell: true,
-    });
+    if (useCmd) {
+      // 使用cmd.exe，避免PowerShell执行策略问题
+      gatewayProcess = spawn('cmd', ['/c', 'openclaw', 'gateway', '--port', String(port), '--verbose']);
+    } else {
+      // 使用默认shell（PowerShell）
+      gatewayProcess = spawn('openclaw', ['gateway', '--port', String(port), '--verbose'], {
+        shell: true,
+      });
+    }
 
     // 保存日志的辅助函数
     const saveLog = async (type: 'stdout' | 'stderr' | 'system', text: string) => {

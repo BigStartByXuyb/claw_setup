@@ -57,7 +57,7 @@ const StepTwo: React.FC<Props> = ({ onReadyChange }) => {
     if (installing.has(tool)) return;
 
     setInstalling(prev => new Set(prev).add(tool));
-    setInstallError(null); // 清除之前的错误
+    setInstallError(null);
 
     try {
       const result = await ipc.invoke('install-tool', tool);
@@ -71,8 +71,8 @@ const StepTwo: React.FC<Props> = ({ onReadyChange }) => {
         alert(`${tool} 安装成功！`);
         await checkDependencies();
       } else if (!result.success) {
-        // 存储错误信息而不是使用 alert
         const errorMessage = result.message || result.error || '未知错误';
+        alert(errorMessage);
         const fullError = `工具: ${tool}\n错误: ${errorMessage}\n输出: ${result.output || '无'}`;
         setInstallError({ tool, message: fullError });
       }
@@ -95,6 +95,12 @@ const StepTwo: React.FC<Props> = ({ onReadyChange }) => {
       npm:  'https://www.npmjs.com/',
       git:  'https://git-scm.com/',
       pnpm: 'https://pnpm.io/',
+      python: 'https://www.python.org/',
+      python3: 'https://www.python.org/',
+      docker: 'https://www.docker.com/',
+      'docker-compose': 'https://docs.docker.com/compose/',
+      ffmpeg: 'https://ffmpeg.org/',
+      magick: 'https://imagemagick.org/',
     };
     if (urls[tool]) ipc.invoke('open-external', urls[tool]);
   };
@@ -162,7 +168,7 @@ const StepTwo: React.FC<Props> = ({ onReadyChange }) => {
                     </div>
                   )}
                   <div className="dep-actions">
-                    {(tool === 'pnpm' || tool === 'node') ? (
+                    {(tool === 'node' || tool === 'pnpm') ? (
                       <button
                         className="btn btn-primary btn-sm"
                         onClick={() => handleAutoInstall(tool)}
@@ -220,6 +226,16 @@ const StepTwo: React.FC<Props> = ({ onReadyChange }) => {
                 <div className="dep-detail-row">
                   <span className="dep-detail-key">路径</span>
                   <span className="dep-detail-val">{status.path}</span>
+                </div>
+              )}
+              {!status.installed && (
+                <div className="dep-actions">
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => handleManualInstall(tool)}
+                  >
+                    打开官网下载
+                  </button>
                 </div>
               )}
             </div>
