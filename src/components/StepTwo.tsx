@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-
-const ipc = window.electron.ipcRenderer;
+import { dependencyAPI } from '../api/dependencyAPI';
 
 interface DependencyStatus {
   installed: boolean;
@@ -42,10 +41,15 @@ const StepTwo: React.FC<Props> = ({ onReadyChange }) => {
     setChecking(true);
     onReadyChange(false);
     try {
-      const result: DependenciesResult = await ipc.invoke('check-dependencies');
-      setRequired(result.required);
-      setOptional(result.optional);
-      setEnvVars(result.envVars);
+      // 通过 API 层调用依赖检查服务
+      const apiResult = await dependencyAPI.checkAll();
+      if (apiResult.success && apiResult.data) {
+        // IPC 返回的是对象格式，与内部 DependencyCheckResult 数组格式不同
+        const result = apiResult.data as unknown as DependenciesResult;
+        setRequired(result.required);
+        setOptional(result.optional);
+        setEnvVars(result.envVars);
+      }
     } catch (err) {
       console.error('Dependency check error:', err);
     } finally {
@@ -60,7 +64,10 @@ const StepTwo: React.FC<Props> = ({ onReadyChange }) => {
     setInstallError(null);
 
     try {
-      const result = await ipc.invoke('install-tool', tool);
+      // 通过 API 层调用工具安装服务
+      const apiResult = await dependencyAPI.installTool(tool);
+      // IPC 返回的原始数据可能包含旧版字段（alreadyInstalled、newlyInstalled 等）
+      const result: any = apiResult.data || { success: apiResult.success, error: apiResult.error };
 
       if (result.alreadyInstalled) {
         alert(`${tool} 已安装 (版本: ${result.version})`);
@@ -102,7 +109,7 @@ const StepTwo: React.FC<Props> = ({ onReadyChange }) => {
       ffmpeg: 'https://ffmpeg.org/',
       magick: 'https://imagemagick.org/',
     };
-    if (urls[tool]) ipc.invoke('open-external', urls[tool]);
+    if (urls[tool]) window.electron.ipcRenderer.invoke('open-external', urls[tool]);
   };
 
   const handleCopyError = () => {

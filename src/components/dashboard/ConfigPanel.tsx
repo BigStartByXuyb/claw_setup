@@ -5,8 +5,7 @@ import type { ModelProviderConfig, ModelProviderType } from '../../types/models'
 import { MODEL_PROVIDER_METADATA } from '../../types/models';
 import type { ChannelConfig, ChannelType } from '../../types/channels';
 import { CHANNEL_METADATA } from '../../types/channels';
-
-const ipc = window.electron.ipcRenderer;
+import { configAPI } from '../../api/configAPI';
 
 const ConfigPanel: React.FC = () => {
   const [config, setConfig] = useState<any>({});
@@ -66,9 +65,9 @@ const ConfigPanel: React.FC = () => {
   }, []);
 
   const loadConfig = async () => {
-    const result = await ipc.invoke('read-config');
+    const result = await configAPI.loadConfig();
     if (result.success) {
-      const c = result.config;
+      const c = result.data;
       setConfig(c);
 
       // Load model providers
@@ -165,18 +164,18 @@ const ConfigPanel: React.FC = () => {
   };
 
   const loadPrimaryModel = async () => {
-    const result = await ipc.invoke('get-current-model');
-    if (result.success && result.model) {
-      setPrimaryModel(result.model);
+    const result = await configAPI.getCurrentModel();
+    if (result.success && result.data) {
+      setPrimaryModel(result.data);
     }
   };
 
   const loadAvailableModels = async () => {
     setLoadingModels(true);
     try {
-      const result = await ipc.invoke('get-available-models');
+      const result = await configAPI.getAvailableModels();
       if (result.success) {
-        setAvailableModels(result.models);
+        setAvailableModels(result.data || []);
       }
     } finally {
       setLoadingModels(false);
@@ -190,7 +189,7 @@ const ConfigPanel: React.FC = () => {
   };
 
   const handleSetPrimaryModel = async (model: string) => {
-    const result = await ipc.invoke('set-primary-model', model);
+    const result = await configAPI.setPrimaryModel(model);
     if (result.success) {
       setPrimaryModel(model);
       setSaved(true);
@@ -240,14 +239,14 @@ const ConfigPanel: React.FC = () => {
       for (const providerType of allProviderTypes) {
         if (!modelProviders[providerType]) {
           // 这个 provider 已被移除，从配置文件中删除
-          await ipc.invoke('config-unset', `models.providers.${providerType}`);
+          await configAPI.deleteConfigValue(`models.providers.${providerType}`);
         }
       }
 
-      // Save model providers
+      // 保存模型提供商配置
       for (const [providerId, providerConfig] of Object.entries(modelProviders)) {
         if (providerConfig.enabled) {
-          // Build the complete provider object
+          // 构建完整的提供商对象
           const providerData: any = {
             baseUrl: providerConfig.baseUrl,
             auth: providerConfig.auth,
@@ -270,8 +269,8 @@ const ConfigPanel: React.FC = () => {
             if (providerConfig.awsSecretAccessKey) providerData.awsSecretAccessKey = providerConfig.awsSecretAccessKey;
           }
 
-          // Save the entire provider object at once to avoid validation errors
-          const result = await ipc.invoke('config-set', `models.providers.${providerId}`, providerData);
+          // 一次性保存整个提供商对象，避免逐字段验证错误
+          const result = await configAPI.setConfigValue(`models.providers.${providerId}`, providerData);
           if (!result.success) {
             console.error('Config set failed:', result.error);
             alert(`保存失败: ${result.error}`);
@@ -280,68 +279,68 @@ const ConfigPanel: React.FC = () => {
         }
       }
 
-      // Save channels
+      // 保存频道配置
       for (const [channelType, channelConfig] of Object.entries(channels)) {
-        await ipc.invoke('config-set', `channels.${channelType}.enabled`, channelConfig.enabled);
+        await configAPI.setConfigValue(`channels.${channelType}.enabled`, channelConfig.enabled);
 
         if (channelConfig.enabled) {
-          // Save channel-specific fields
+          // 保存频道特有字段
           if (channelConfig.type === 'discord' && 'token' in channelConfig) {
-            await ipc.invoke('config-set', `channels.${channelType}.token`, channelConfig.token);
+            await configAPI.setConfigValue(`channels.${channelType}.token`, channelConfig.token);
           } else if (channelConfig.type === 'telegram' && 'botToken' in channelConfig) {
-            await ipc.invoke('config-set', `channels.${channelType}.botToken`, channelConfig.botToken);
-            if (channelConfig.webhookUrl) await ipc.invoke('config-set', `channels.${channelType}.webhookUrl`, channelConfig.webhookUrl);
-            if (channelConfig.webhookSecret) await ipc.invoke('config-set', `channels.${channelType}.webhookSecret`, channelConfig.webhookSecret);
+            await configAPI.setConfigValue(`channels.${channelType}.botToken`, channelConfig.botToken);
+            if (channelConfig.webhookUrl) await configAPI.setConfigValue(`channels.${channelType}.webhookUrl`, channelConfig.webhookUrl);
+            if (channelConfig.webhookSecret) await configAPI.setConfigValue(`channels.${channelType}.webhookSecret`, channelConfig.webhookSecret);
           } else if (channelConfig.type === 'slack' && 'botToken' in channelConfig) {
-            await ipc.invoke('config-set', `channels.${channelType}.botToken`, channelConfig.botToken);
-            if (channelConfig.appToken) await ipc.invoke('config-set', `channels.${channelType}.appToken`, channelConfig.appToken);
-            if (channelConfig.signingSecret) await ipc.invoke('config-set', `channels.${channelType}.signingSecret`, channelConfig.signingSecret);
+            await configAPI.setConfigValue(`channels.${channelType}.botToken`, channelConfig.botToken);
+            if (channelConfig.appToken) await configAPI.setConfigValue(`channels.${channelType}.appToken`, channelConfig.appToken);
+            if (channelConfig.signingSecret) await configAPI.setConfigValue(`channels.${channelType}.signingSecret`, channelConfig.signingSecret);
           } else if (channelConfig.type === 'feishu' && 'appId' in channelConfig) {
-            await ipc.invoke('config-set', `channels.${channelType}.appId`, channelConfig.appId);
-            await ipc.invoke('config-set', `channels.${channelType}.appSecret`, channelConfig.appSecret);
+            await configAPI.setConfigValue(`channels.${channelType}.appId`, channelConfig.appId);
+            await configAPI.setConfigValue(`channels.${channelType}.appSecret`, channelConfig.appSecret);
           }
 
-          // Save common fields
-          if (channelConfig.dmPolicy) await ipc.invoke('config-set', `channels.${channelType}.dmPolicy`, channelConfig.dmPolicy);
-          if (channelConfig.groupPolicy) await ipc.invoke('config-set', `channels.${channelType}.groupPolicy`, channelConfig.groupPolicy);
-          if (channelConfig.streaming) await ipc.invoke('config-set', `channels.${channelType}.streaming`, channelConfig.streaming);
-          if (channelConfig.allowFrom) await ipc.invoke('config-set', `channels.${channelType}.allowFrom`, channelConfig.allowFrom);
-          if ('actions' in channelConfig && channelConfig.actions) await ipc.invoke('config-set', `channels.${channelType}.actions`, channelConfig.actions);
+          // 保存通用字段
+          if (channelConfig.dmPolicy) await configAPI.setConfigValue(`channels.${channelType}.dmPolicy`, channelConfig.dmPolicy);
+          if (channelConfig.groupPolicy) await configAPI.setConfigValue(`channels.${channelType}.groupPolicy`, channelConfig.groupPolicy);
+          if (channelConfig.streaming) await configAPI.setConfigValue(`channels.${channelType}.streaming`, channelConfig.streaming);
+          if (channelConfig.allowFrom) await configAPI.setConfigValue(`channels.${channelType}.allowFrom`, channelConfig.allowFrom);
+          if ('actions' in channelConfig && channelConfig.actions) await configAPI.setConfigValue(`channels.${channelType}.actions`, channelConfig.actions);
         }
       }
 
-      // Save gateway settings
-      if (port) await ipc.invoke('config-set', 'gateway.port', parseInt(port));
-      if (host) await ipc.invoke('config-set', 'gateway.host', host);
+      // 保存网关配置
+      if (port) await configAPI.setConfigValue('gateway.port', parseInt(port));
+      if (host) await configAPI.setConfigValue('gateway.host', host);
 
-      // Save advanced settings
-      if (workspaceDataDir) await ipc.invoke('config-set', 'workspace.dataDir', workspaceDataDir);
-      if (workspaceLogsDir) await ipc.invoke('config-set', 'workspace.logsDir', workspaceLogsDir);
-      if (workspaceCacheDir) await ipc.invoke('config-set', 'workspace.cacheDir', workspaceCacheDir);
+      // 保存高级设置
+      if (workspaceDataDir) await configAPI.setConfigValue('workspace.dataDir', workspaceDataDir);
+      if (workspaceLogsDir) await configAPI.setConfigValue('workspace.logsDir', workspaceLogsDir);
+      if (workspaceCacheDir) await configAPI.setConfigValue('workspace.cacheDir', workspaceCacheDir);
 
-      if (gatewayAuth) await ipc.invoke('config-set', 'gateway.auth', gatewayAuth);
-      await ipc.invoke('config-set', 'gateway.tailscale.enabled', gatewayTailscale);
+      if (gatewayAuth) await configAPI.setConfigValue('gateway.auth', gatewayAuth);
+      await configAPI.setConfigValue('gateway.tailscale.enabled', gatewayTailscale);
 
-      await ipc.invoke('config-set', 'daemon.enabled', daemonEnabled);
-      await ipc.invoke('config-set', 'daemon.autoStart', daemonAutoStart);
+      await configAPI.setConfigValue('daemon.enabled', daemonEnabled);
+      await configAPI.setConfigValue('daemon.autoStart', daemonAutoStart);
 
-      await ipc.invoke('config-set', 'tools.web.search.enabled', webSearchEnabled);
-      await ipc.invoke('config-set', 'tools.web.search.provider', webSearchProvider);
-      if (webSearchApiKey) await ipc.invoke('config-set', 'tools.web.search.apiKey', webSearchApiKey);
-      if (perplexityApiKey) await ipc.invoke('config-set', 'tools.web.search.perplexity.apiKey', perplexityApiKey);
-      if (grokApiKey) await ipc.invoke('config-set', 'tools.web.search.grok.apiKey', grokApiKey);
-      if (geminiSearchApiKey) await ipc.invoke('config-set', 'tools.web.search.gemini.apiKey', geminiSearchApiKey);
-      if (kimiApiKey) await ipc.invoke('config-set', 'tools.web.search.kimi.apiKey', kimiApiKey);
+      await configAPI.setConfigValue('tools.web.search.enabled', webSearchEnabled);
+      await configAPI.setConfigValue('tools.web.search.provider', webSearchProvider);
+      if (webSearchApiKey) await configAPI.setConfigValue('tools.web.search.apiKey', webSearchApiKey);
+      if (perplexityApiKey) await configAPI.setConfigValue('tools.web.search.perplexity.apiKey', perplexityApiKey);
+      if (grokApiKey) await configAPI.setConfigValue('tools.web.search.grok.apiKey', grokApiKey);
+      if (geminiSearchApiKey) await configAPI.setConfigValue('tools.web.search.gemini.apiKey', geminiSearchApiKey);
+      if (kimiApiKey) await configAPI.setConfigValue('tools.web.search.kimi.apiKey', kimiApiKey);
 
-      await ipc.invoke('config-set', 'tools.web.fetch.enabled', webFetchEnabled);
-      await ipc.invoke('config-set', 'tools.web.fetch.firecrawl.enabled', firecrawlEnabled);
-      if (firecrawlApiKey) await ipc.invoke('config-set', 'tools.web.fetch.firecrawl.apiKey', firecrawlApiKey);
+      await configAPI.setConfigValue('tools.web.fetch.enabled', webFetchEnabled);
+      await configAPI.setConfigValue('tools.web.fetch.firecrawl.enabled', firecrawlEnabled);
+      if (firecrawlApiKey) await configAPI.setConfigValue('tools.web.fetch.firecrawl.apiKey', firecrawlApiKey);
 
-      if (skillsDir) await ipc.invoke('config-set', 'skills.dir', skillsDir);
-      if (enabledSkills.length > 0) await ipc.invoke('config-set', 'skills.enabled', enabledSkills);
+      if (skillsDir) await configAPI.setConfigValue('skills.dir', skillsDir);
+      if (enabledSkills.length > 0) await configAPI.setConfigValue('skills.enabled', enabledSkills);
 
-      await ipc.invoke('config-set', 'healthCheck.enabled', healthCheckEnabled);
-      if (healthCheckInterval) await ipc.invoke('config-set', 'healthCheck.interval', parseInt(healthCheckInterval));
+      await configAPI.setConfigValue('healthCheck.enabled', healthCheckEnabled);
+      if (healthCheckInterval) await configAPI.setConfigValue('healthCheck.interval', parseInt(healthCheckInterval));
 
       // Refresh available models after saving
       await loadAvailableModels();

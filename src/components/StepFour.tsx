@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-
-const ipc = window.electron.ipcRenderer;
+import { installAPI } from '../api/installAPI';
+import { gatewayAPI } from '../api/gatewayAPI';
 
 interface Props {
   onNext: (data: any) => void;
@@ -36,19 +36,23 @@ const StepFour: React.FC<Props> = ({ onNext, installData, onComplete }) => {
     setPhase(1);
 
     try {
-      const configResult = await ipc.invoke('configure-channels', selectedChannels);
+      // 步骤 1：配置频道
+      const configResult = await installAPI.configureChannels(selectedChannels);
       if (!configResult.success) throw new Error(configResult.error);
 
+      // 步骤 2：启动网关服务
       setPhase(2);
-      const serverResult = await ipc.invoke('start-openclaw-server');
+      const serverResult = await gatewayAPI.start();
       if (!serverResult.success) console.warn('Server start warning:', serverResult.error);
 
+      // 步骤 3：打开聊天界面
       setPhase(3);
       await new Promise((r) => setTimeout(r, 1500));
-      await ipc.invoke('open-chat-window');
+      await gatewayAPI.openChatWindow();
 
+      // 步骤 4：生成使用指南
       setPhase(4);
-      await ipc.invoke('generate-guide', installData.installDir || '');
+      await installAPI.generateGuide(installData.installDir || undefined);
 
       setCompleted(true);
     } catch (err) {
@@ -108,13 +112,13 @@ const StepFour: React.FC<Props> = ({ onNext, installData, onComplete }) => {
           </button>
           <button
             className="btn btn-ghost"
-            onClick={() => ipc.invoke('open-external', 'https://docs.openclaw.ai')}
+            onClick={() => window.electron.ipcRenderer.invoke('open-external', 'https://docs.openclaw.ai')}
           >
             📖 查看文档
           </button>
           <button
             className="btn btn-ghost"
-            onClick={() => ipc.invoke('open-external', 'https://discord.gg/clawd')}
+            onClick={() => window.electron.ipcRenderer.invoke('open-external', 'https://discord.gg/clawd')}
           >
             💬 加入社区
           </button>

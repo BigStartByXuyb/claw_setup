@@ -8,6 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Tech stack**: Electron 25 + React 18 + TypeScript 5 + electron-builder
 
+**Node.js requirement**: 18.0.0+ (package.json engines field enforces this)
+
 ## Essential Commands
 
 ```bash
@@ -239,8 +241,8 @@ npm info <package-name> peerDependencies
 ### Environment Setup
 
 **Required tools for development:**
-- Node.js 22+
-- npm (comes with Node.js)
+- Node.js 18.0.0+ (enforced by package.json engines field)
+- npm 9.0.0+ (comes with Node.js)
 - Git
 - pnpm (can be auto-installed via installer)
 
@@ -251,6 +253,8 @@ npm --version
 git --version
 pnpm --version
 ```
+
+**Important**: The installer itself can install Node.js to a test directory to avoid overwriting existing installations. This is useful for testing different Node.js versions.
 
 ## Browser Cache Awareness
 
@@ -282,6 +286,15 @@ When testing changes that don't appear:
 
 **Issue**: TypeScript errors at runtime
 **Solution**: Run `npx tsc --noEmit` before testing to catch type errors early
+
+**Issue**: Git dependencies fail with SSH errors
+**Solution**: Configure git to use HTTPS instead of SSH for GitHub dependencies (see commit 7426726)
+
+**Issue**: Node.js version validation fails
+**Solution**: Ensure dependency check validates Node.js version correctly (see commit a824ff5)
+
+**Issue**: Gateway fails to start after installation
+**Solution**: Check Node.js installation path and ensure gateway process spawns correctly (see commit 17ff500)
 
 ## Advanced Claude Code Features
 

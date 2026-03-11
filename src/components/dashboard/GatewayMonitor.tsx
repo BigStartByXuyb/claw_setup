@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { gatewayAPI } from '../../api/gatewayAPI';
 
+// 保留对原生 ipcRenderer 的访问，用于监听推送事件（gateway-log）
 const ipc = window.electron.ipcRenderer;
 
 interface LogLine {
@@ -16,14 +18,12 @@ const GatewayMonitor: React.FC = () => {
   const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Load historical logs from backend
+    // 从后端加载历史日志
     const loadLogs = async () => {
-      if (!ipc) return;
-
-      const result = await ipc.invoke('get-gateway-logs');
-      if (result.success && result.logs) {
-        // Parse log file content into LogLine array
-        const lines = result.logs.split('\n').filter((line: string) => line.trim());
+      const apiResult = await gatewayAPI.getLogs();
+      if (apiResult.success && apiResult.data) {
+        // 解析日志文件内容为 LogLine 数组
+        const lines = apiResult.data.split('\n').filter((line: string) => line.trim());
         const parsedLogs: LogLine[] = lines.map((line: string) => {
           // Parse format: [timestamp] [type] text
           const match = line.match(/^\[(.*?)\] \[(.*?)\] (.*)$/);
@@ -43,8 +43,8 @@ const GatewayMonitor: React.FC = () => {
 
     loadLogs();
 
-    // Check initial status
-    ipc?.invoke('gateway-status').then((r: any) => setRunning(r.running));
+    // 检查网关初始状态
+    gatewayAPI.getStatus().then(r => { if (r.success && r.data) setRunning(r.data.isRunning); });
 
     // Listen for log events
     ipc?.on('gateway-log', (msg: { type: 'stdout' | 'stderr' | 'system'; text: string }) => {
@@ -92,27 +92,27 @@ const GatewayMonitor: React.FC = () => {
       { type: 'system', text: '🔍 检查现有网关进程...', ts: Date.now() },
     ]);
 
-    await ipc.invoke('gateway-stop');
+    // 先停止现有进程，再启动新进程
+    await gatewayAPI.stop();
 
-    // 使用 forceKill 选项，自动强制关闭占用端口的进程
-    const result = await ipc.invoke('gateway-start', { forceKill: true });
+    const result = await gatewayAPI.start();
 
     if (result.success) {
       setRunning(true);
       setLogs((prev) => [
         ...prev,
-        { type: 'system', text: `▶ Gateway starting on port ${result.port}...`, ts: Date.now() },
+        { type: 'system', text: `▶ Gateway starting on port ${result.data?.port}...`, ts: Date.now() },
       ]);
     } else {
       setLogs((prev) => [
         ...prev,
-        { type: 'system', text: `! 启动失败: ${result.message || result.error || '未知错误'}`, ts: Date.now() },
+        { type: 'system', text: `! 启动失败: ${result.error || '未知错误'}`, ts: Date.now() },
       ]);
     }
   };
 
   const handleStop = async () => {
-    await ipc.invoke('gateway-stop');
+    await gatewayAPI.stop();
     setRunning(false);
     setLogs((prev) => [
       ...prev,
@@ -121,9 +121,7 @@ const GatewayMonitor: React.FC = () => {
   };
 
   const handleClear = async () => {
-    if (!ipc) return;
-
-    await ipc.invoke('clear-gateway-logs');
+    await gatewayAPI.clearLogs();
     setLogs([]);
   };
 
